@@ -4,7 +4,7 @@ library(xlsx) # load xlsx pacakge
 
 
 
-setwd("/Users/Quentin/Desktop/Hdip Data Science and Analytics/Year 1/Semester 1/STAT8010 - Introduction to R for Data Science/Assignment 1") # Set the working directory to where file is contained
+# Set the working directory to where file is contained
 
 sheet1 =read.xlsx("STAT8010-CA1_2024.xlsx",1) # Assign each sheed to a Data frame
 sheet2 =read.xlsx("STAT8010-CA1_2024.xlsx",2)
