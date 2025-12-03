@@ -31,7 +31,6 @@ Finally, we will create a smaller data frame where we can Hose Type is available
 library(xlsx)
 
 # Set the directory where the file is located
-setwd("/Users/Quentin/Desktop/Hdip Data Science and Analytics/Year 1/Semester 1/STAT8010 - Introduction to R for Data Science/Assignment 1")
 
 #Read through each spreadsheet and store each dataframe as Variable
 sheet1 =read.xlsx("STAT8010-CA1_2024.xlsx",1)
