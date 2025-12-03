@@ -1,0 +1,575 @@
+---
+title: "Assignment1"
+author: "Quentin JONNEAUX - R00274704"
+date: "2024-11-10"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+In this report, we are wrangling different data sets of batch production. Each batch is identified with unique numbers, Product and Site codes, labelled with their dates of productions, cost, volume, base buffer and feed type, outputs of PH and Concentration. We also have batches where we are provided the Hose type used for production. Our job here is to clean up the data, assess the statistics and provide visualizations to provide a report to our manager and identify patterns. 
+
+We are provided spreadsheets where the first 2 are containing information related to different batches. We can notice the formats for column names and order in table are different so some data cleaning steps are needed to combine those 2 spreadsheet to form a unique data set we can use The last spreadsheet contains information that would complete some entries and add the Hose Type used for some batches. Some additional data wrangling steps will be needed in order to merge such information to appropriate rows.
+
+After that, we will provide some data visualisations and descriptive statistics and eventually draw relationships between variables. We will provide the descriptive statistics of Output concentration of batch product and Final PH measurement of batch output and see if there is a pattern with the Feed Types.
+
+We will also create profitability categories, based on Cost per Volume and use visualization to see if a pattern exist with the Feed Types and Concentrations.
+
+Finally, we will create a smaller data frame where we can Hose Type is available explore, filters, visualisations to provide any findings.
+
+\newpage
+
+```{r install xlsx package and read through files, echo=FALSE}
+## 1 - Accessing the data set
+
+# Install and Launch "xlsx" package to read the data frames
+# install.packages("xlsx")
+library(xlsx)
+
+# Set the directory where the file is located
+setwd("/Users/Quentin/Desktop/Hdip Data Science and Analytics/Year 1/Semester 1/STAT8010 - Introduction to R for Data Science/Assignment 1")
+
+#Read through each spreadsheet and store each dataframe as Variable
+sheet1 =read.xlsx("STAT8010-CA1_2024.xlsx",1)
+sheet2 =read.xlsx("STAT8010-CA1_2024.xlsx",2)
+sheet3 =read.xlsx("STAT8010-CA1_2024.xlsx",3)
+```
+
+
+```{r generate data frames and format variables, echo=FALSE, warning=FALSE, results='hide',message=FALSE}
+## 2 - Generate a data frame or tibble for each sheet in the file and correctly format each variable as appropriate.
+
+#install.packages("dplyr")
+library(dplyr)
+df1 = sheet1
+df2 = sheet2
+df3 = sheet3
+
+df1$BatchID = as.numeric(df1$BatchID)
+df1$ProductName_Code = as.character(df1$ProductName_Code)
+df1$SiteCode = as.numeric(df1$SiteCode)
+df1$DateProduced = as.Date(df1$DateProduced)
+df1$Volume = as.numeric(df1$Volume)
+df1$BatchCost = as.numeric(df1$BatchCost)
+df1$BaseBuffer = as.factor(df1$BaseBuffer)
+df1$FeedType = as.factor(df1$FeedType)
+df1$FinalConc = as.numeric(df1$FinalConc)
+df1$FinalPH = as.numeric(df1$FinalPH)
+
+df2$BatchID = as.numeric(df2$BatchID)
+df2$ProdName = as.character(df2$ProdName)
+df2$Site = as.numeric(df2$Site)
+df2$Date_Produced = as.Date(df2$Date_Produced)
+df2$Volume = as.numeric(df2$Volume)
+df2$BatchCost = as.character(df2$BatchCost) #### Contains data error (addressing it in Q3),  cannot format as numeric yet
+df2$BaseBuffer = as.factor(df2$BaseBuffer)
+df2$FeedType = as.factor(df2$FeedType)
+df2$ProdFinalConc = as.numeric(df2$ProdFinalConc)
+df2$PH_Final = as.numeric(df2$PH_Final)
+
+# Relocate columns of df2 to match df1
+df2 = relocate(df2, Date_Produced, .after=Site)
+df2 = df2 %>% relocate(Volume, .after = Date_Produced)
+df2 = df2 %>% relocate(FeedType, .after = BaseBuffer)
+
+#Rename columns of df2 to match df1
+
+df2 = df2 %>% rename(ProductName_Code = ProdName,
+                     SiteCode = Site,
+                     DateProduced= Date_Produced,
+                     FinalConc = ProdFinalConc,
+                     FinalPH = PH_Final)
+
+df3$BatchID = as.numeric(df3$BatchID)
+df3$ProductName_Code = as.character(df3$ProductName_Code)
+df3$SiteCode = as.numeric(df3$SiteCode)
+df3$HoseTypeUsed = as.factor(df3$HoseTypeUsed)
+
+```
+
+
+
+```{r Correct BatchCost values, echo=FALSE, warning=FALSE, message=FALSE}
+## 3 - Correct errors in Sheet2
+
+# Replacing each BatchCost value containing "b" by "6"
+df2$BatchCost = gsub("b","6", df2$BatchCost)
+
+# Replacing each BatchCost value containing "O" by "0"
+df2$BatchCost = gsub("O","0", df2$BatchCost)
+
+#Formatting Batchcost column after correcting data, to num as in df1
+df2$BatchCost = as.numeric(df2$BatchCost)
+
+```
+
+
+
+```{r Merging datasets, echo=FALSE}
+## 4 - Merge Data sets
+
+dfMerged = rbind(df1, df2)
+```
+
+
+
+```{r Calculate Age in Weeks, echo=FALSE}
+## 5 - Create column for Age in Weeks
+
+
+dfMerged$AgeInWeeks = as.integer((as.Date("2024-10-01")-dfMerged$DateProduced)/7)
+```
+
+
+
+```{r create reference codes, echo=FALSE}
+## 6 - Create reference codes
+
+for (i in seq(nrow(dfMerged))) {
+  BatchID = as.character(dfMerged$BatchID[i])
+  firstProdLetter = substr(dfMerged$ProductName_Code[i],1,1)
+  lastSiteNum = substr(as.character(dfMerged$SiteCode[i]),
+                       nchar(as.character(dfMerged$SiteCode[i])),
+                       nchar(as.character(dfMerged$SiteCode[i])))
+  
+  refCode = paste(BatchID,
+                  "-",
+                  firstProdLetter,
+                  lastSiteNum,
+                  sep = "")
+  
+  dfMerged$refCodes[i] = refCode
+}
+```
+
+
+
+```{r Calculate categories, echo=FALSE}
+## 7 - Create categories for Cost per Volumes
+
+for (i in seq(nrow(dfMerged))) {
+  costPerVol = dfMerged$BatchCost[i]/dfMerged$Volume[i]
+  if (costPerVol < 300 ) {
+    category = "High Profit"  
+  } else if (costPerVol >= 300 && costPerVol < 800 ) {
+    category = "Moderate Profit"
+  } else if (costPerVol >= 800 && costPerVol < 1200 ) {
+    category = "Low Profit"
+  } else if (costPerVol >= 1200 && costPerVol < 1800 ) {
+    category = "Break Even"
+  } else if (costPerVol >= 1800 && costPerVol < 3500 ) {
+    category = "Tolerable Loss"
+  } else {
+    category = "Unacceptable Loss"
+  }
+  
+  dfMerged$Category[i] = category
+}
+```
+
+
+
+```{r Create plots and table, echo=FALSE, warning=FALSE, message=FALSE}
+## 8 - Create table of descriptive stats and plots
+
+
+# install.packages("tidyverse")
+library(tidyverse)
+
+# Create a vector for each category
+categories = unique(dfMerged$Category)
+
+# Create an empty dataframe in the requested format
+dfdata = data.frame(Category=as.character(),
+                    TotalNumBatch=as.numeric(),
+                    FinalPHmin=as.numeric(),
+                    FinalPHmax=as.numeric(),
+                    FinalPHmean=as.numeric(),
+                    FinalPHmedian=as.numeric(),
+                    FinalPHSD=as.numeric(),
+                    FinalConcmin=as.numeric(),
+                    FinalConcmax=as.numeric(),
+                    FinalConcmean=as.numeric(),
+                    FinalConcmedian=as.numeric(),
+                    FinalConcSD=as.numeric())
+
+# Filter each category, get the descriptive stats and insert them in the data frame
+for (category in categories) {
+  
+  data = filter(dfMerged, Category == category)
+  
+  dfdata[nrow(dfdata) + 1,] = c(category,
+                                nrow(data),
+                                min(data$FinalPH),
+                                max(data$FinalPH),
+                                mean(data$FinalPH),
+                                median(data$FinalPH),
+                                sd(data$FinalPH),
+                                min(data$FinalConc),
+                                max(data$FinalConc),
+                                mean(data$FinalConc),
+                                median(data$FinalConc),
+                                sd(data$FinalConc))
+}
+```
+
+```{r Display Descriptive Stats, echo=FALSE, message=FALSE, }
+#install.packages("kableExtra")
+library(knitr)
+library(kableExtra)
+
+# Ordering the levels of the Data Frame
+dfdata$Category = factor(dfdata$Category, levels = c("High Profit" , "Moderate Profit", "Low Profit", "Break Even", "Tolerable Loss", "Unacceptable Loss" ))
+
+# Ordering the Data Frame by levels
+dfdata <- dfdata[order(dfdata$Category),]
+
+kable(dfdata, caption = "Descriptive Statistics of the merged Data Set from Sheet 1 and 2")
+```
+
+When dealing with the table showing descriptive statistics of FinalPH and FinalConc for each category, we can notice that the production is mostly profitable. 104 batches made at least low profits, which represent 54% of the total number of batches. 27% of batches are made loss (51 batches), meaning Break Even category represent 19% of the total number.
+
+The FinalPH descriptive statistics do not seem to provide any insights since the minimum, maximum, mean and median values are differ for around 0.1 for the categories and the standard deviation for each is close to 0.2 and 0.3.
+
+The FinalConc descriptive statistics seem to give some pattern. The Break Even category seems to have the highest range of value with a minimum of 45 mg/L and a maximum of 211 mg/L.. This category also have the highest mean (129 mg/L) and median (131 mg/L).  Those median can be used as limits to determine profitability. We can see the High Profit and Low Profit category have FinalConc medians of 121.5 and 125 mg/L, which differ much from Break Even Category (higher FinalConc with 131 mg/L) and other categories (lower with 112, 117 and 118 mg/L). Finally, we can see that standard deviation of FinalConc increase with profitability.
+
+\newpage
+
+```{r barplot of feedtypes, echo=FALSE}
+# Sorting categories in Profitability order
+dfMerged$Category = factor(dfMerged$Category, levels = c("High Profit" , "Moderate Profit", "Low Profit", "Break Even", "Tolerable Loss", "Unacceptable Loss" ))
+
+# Display plot
+dfMerged %>%
+  ggplot(aes(x=Category)) +
+  geom_bar(aes(fill = FeedType), position = position_dodge()) +
+  ggtitle("Feed Types per Category Bar plot") +
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL"))
+```
+
+The bar plot for the feed types in each category shows both feed types can generate any categories of product. We can see the type B has not been used as much as A and is quite uniform in every categories (around 8 times), except in the low profit categories where can record almost 15 times). The feed type A has mostly been used and mostly generate moderate profit (highest count). However, the second and third highest counts are not profitable (Break Even and Tolerable Loss categories). We can still record that the A type could generate highly profitable product in almost 20 instances.
+
+\newpage
+
+```{r boxplots of Conc, echo=FALSE}
+# Boxplot of Conc
+dfMerged %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Final Concentration per Category Types Box plot") +
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  geom_boxplot(aes(y=FinalConc))
+
+```
+
+The box plots for concentrations in each categories show medians for each categories are closed to each other (all closed to 125 mg/L). The distributions differ in each category. The widest box seems to be Unacceptable Loss category, but its distribution seem symmetrical, while the narrowest is the Moderate profit, with a skewed distribution containing 5 outliers (4 significantly less concentrated and 1 much more). We can also spot outliers in the Break Even category (2) and in the High Profit category.
+
+\newpage
+
+```{r boxplots of PH, echo=FALSE}
+# Boxplot of PH
+dfMerged %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Final PH per Category Types Box plot") +
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  geom_boxplot(aes(y=FinalPH))
+```
+
+The box plots for PHs in each categories show the High Profit distribution is centralised in lower values of PH (below 6.9) while other categories are centralised in the higher values up to 7.1, except for the Break Even category. We can see the widest boxes are the loss categories (IQR of 0.5), while the narrowest is the High Profit (IQR of 0.3) but is also the most skewed since some PH values can go up to 7.3 in this category.
+
+\newpage
+
+```{r Plot Volume against Cost, echo=FALSE, warning=FALSE}
+## 9 - Create a scatterplot, plotting Volume against Cost (500 words)
+
+dfMerged %>%
+  # Define x and Y for plot
+  ggplot(aes(x=Volume, y = BatchCost)) +
+  # Define variable for size, shape and colour
+  geom_point(aes(size = FinalConc, shape = FeedType, colour = Category))+
+  ggtitle("Volume against BatchCost Scatter plot\n\n\n\n") +
+  # Create dividing lines with a different color
+  geom_segment(aes(x = 0, xend = 29, y=0,yend = 100000), colour = "magenta")+
+  geom_segment(aes(x = 0, xend = 55, y=0,yend = 100000), colour = "blue")+
+  geom_segment(aes(x = 0, xend = 83, y=0,yend = 100000), colour = "red")+
+  geom_segment(aes(x = 0, xend = 95, y=0,yend = 75000), colour = "green")+
+  geom_segment(aes(x = 0, xend = 90, y=0,yend = 27500), colour = "cyan")+
+  geom_segment(aes(x = 0, xend = 110, y=0,yend = 10000), colour = "gold")
+```
+
+This scatterplot is really useful as we can draw a line to separate the profitable values from the one that are not. Values under the red line are the profitable values ( Low, Moderate and High profit categories) and the values above are the non-profitable categories (Break Even, Tolerable Loss, Unacceptable Loss). Other line of separation have been drawn to highlight each region and we can see that the most profitable productions are constrains under approximately 20,000 € of Cost while the most unprofitable batches are constrained lower Volumes (around 28 𝑚3).
+
+The widest region seems to be the Moderately profitable, meaning it is the one that cover the biggest range of Cost per Volume values. We can see that this region contains mostly batches of the feed type A as we count only 8 instances of B.
+
+It is interesting to highlight the distributions of batches between the profitable and unprofitable regions. It seems that most unprofitable batches seems to be mostly  constrained above 60,000 € of Cost while profitable batches seems to be constrained under. In terms of Volume, most profitable batches seems to be constrained above 40 𝑚3 while most unprofitable ones seems to be under this value. We can use these values to set production benchmarks.
+
+Dealing with feed types, this plot does not seem to give any relationship to cost, volume or categories. We can see that both types are present in each category regions. Regarding the concentrations, we can see the whole spectrum in profitable and unprofitable regions, however we can see there are more instances of boundary values (lowest and highest concentrations) in profitable regions. We may perceive overall using the dot size that lower concentrations tend to have more instance in non-profitable  regions while higher concentrations seems to have more instances in profitable categories, when comparing both extremes but it is less verifiable in middle regions. 
+
+In other words, this plot is useful to set benchmarks and targets as it provides profitability regions but difficult to draw relationships between Cost, Volume, Feed Types and Concentrations.
+
+\newpage
+
+```{r Merge hose dataframe, echo=FALSE}
+## 10 - Merge info from Sheet 3
+
+# Filter values where Batch is not available and bind it to dataframe
+df3na = df3 %>%
+  filter(,is.na(BatchID))
+
+dfMerged = bind_rows(dfMerged,df3na)
+
+# Filter values where Batch is  available and merge appropriate rows
+df3nona = df3 %>%
+  filter(,!is.na(BatchID))
+
+for (Batch in df3nona$BatchID) {
+  hose = df3nona$HoseTypeUsed[df3nona$BatchID ==Batch]
+  dfMerged$HoseTypeUsed[dfMerged$BatchID == Batch] = hose
+}
+```
+
+```{r Explore Small Data Frame, echo=FALSE}
+## 11 - Create a small data frame with hose type available and highlight relationships between variables
+
+smalldf = dfMerged %>%
+  filter(HoseTypeUsed != is.na(HoseTypeUsed)) %>%
+  filter(BatchID != is.na(BatchID))
+```
+
+```{r Small Data Frame, echo=FALSE, message=FALSE,}
+#install.packages("kableExtra")
+library(kableExtra)
+library(knitr)
+kable(smalldf[1:5,], caption = "First rows of Data set containing Hose Types")
+```
+
+This smaller data frame counts 80 entries and we can see the Hose Types has been used evenly, as there 40 batches of each type. Those batches have been produced between April 5th, 2020 and  October 13th, 2022. 
+
+\newpage
+
+```{r Hose on Cost per Volume Categories, echo=FALSE}
+# Sorting categories in Profitability order
+smalldf$Category = factor(smalldf$Category, levels = c("High Profit" , "Moderate Profit", "Low Profit", "Break Even", "Tolerable Loss", "Unacceptable Loss" ))
+
+# Display plot
+smalldf %>%
+  ggplot(aes(x=HoseTypeUsed)) +
+  geom_bar(aes(fill=Category), position = position_dodge()) +
+  ggtitle("Hose Types per Category Bar plot")
+```
+
+When plotting the Hose Types against Cost per Volume categories, we can see both types have the exact same proportions in Loss Categories and in the Moderate Profit one. We can see type 2 generated sligthly more High profitable batches but significantly more Break even batches, while type 1 generated significantly more Low profit.
+
+\newpage
+
+```{r Conc and PH against Volume, echo=FALSE, message=FALSE}
+# Scatterplots of Conc against volume, per Hose types
+smalldf %>%
+  ggplot(aes(x=FinalConc, y=Volume)) +
+  ggtitle("Final Concentration against Volume Scatter plot") +
+  geom_point(aes(colour = HoseTypeUsed,size = 2))
+
+# Scatterplots of PH against volume, per Hoset ypes
+smalldf %>%
+  ggplot(aes(x=FinalPH, y=Volume)) +
+  ggtitle("Final PH against Volume Scatter plot") +
+  geom_point(aes(colour = HoseTypeUsed,size = 2))
+```
+
+Plotting Final Concentration against Volume as well as Final PH against Volume, we cannot isolate regions on where a single Hose type has been used. If we mark the types by color, we can see that both types are mixed and we cannot identify any region where one is isolated. Plotting those against Cost instead of Volume does not return any relationship identifiable.
+
+\newpage
+
+```{r Category on Hose Type per Feed Type, echo=FALSE}
+smalldf %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Hose Types per Category for Feed Types Bar plot") +
+  geom_bar(aes(fill=HoseTypeUsed), position = position_dodge())+
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  facet_grid(~FeedType)
+```
+
+When making a bar plot of Hose type against Feed types, we can see that Feed Type A has been used much more for both Hose type. If we are plotting Hose type against categories for each Feed type, we can see using Feed A that the Hose type 2 produced significantly much more Break Even and Highly profitable batches while the differences in other categories are less significant. Only the Moderate Profit category records more of type 1. In feed type B, we can see the Hose type 2 has not returned any unacceptable loss. All categories have 1 unit of difference except the Low Profit as the Hose type 1 has been recorded significantly much more. It seems using the Hose type 1 with Feed B would generate steadily Low Profit while using the Hose Type 2 in Feed A would be able to return High profits but with significant risk of not being profitable.
+
+\newpage
+
+```{r Category on Buffer per Hose, echo=FALSE}
+smalldf %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Base Buffers per Category for Hose Types Bar plot") +
+  geom_bar(aes(fill=BaseBuffer), position = position_dodge())+
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  facet_grid(~HoseTypeUsed)
+```
+
+
+The distributions of Buffer for each Hose are not even. We can see that Buffer 3 was used significantly more with Hose 1, while Buffer 1 was used for Hose 2. If we investigate the buffer distributions for each Hose, we can see that Buffer 1 has been producing mainly unprofitable batches using Hose 2. We would not recommend continuing to do so as it seem making loss. For Hose 1, distribution is a little more diverse. We can see buffer is present in every category but profitable categories record more counts. We can see Buffer 1 returned profitable batches and a few Tolerable loss. It is mostly profitable. Using Buffer 1 with type 1 bring drastically different outcomes in terms of profitability.
+
+\newpage
+
+# Summary
+
+We can debrief 2 data frames in our collection:
+
+
+- The first contains the largest amount of data and the most variables, except the Hose Type used.
+- The second is a smaller data frame where we have the Hose type used available for some batches.
+
+From the first data frame, we can analyse the following information:
+
+
+  - The profitable batches represent 54% of the production, meaning the production is most of the time making money.
+  - We can draw regions using the FinalConc medians, where high and low profit categories have medians of 121.5 and 125 mg/L. Break Even categories has higher median and a wider range of values while other categories have lower medians.
+  - We can also draw a relationship between the FinalConc Standard deviation and profit categories since the more profitable the category is, the higher the standard deviation. Concentration is therefore less stable in the highest category.
+  - While Feed Type A has mostly been used for production, both types are related to every category. Feed Type B seems to generate more consistently low profits while A mostly generated moderate profit but also significant instances of Break or loss. It is also the Feed Type that generate most high profits
+  -  We can distinguish different types of distributions of Concentrations and PHs. Concentrations of Break Even and High profit categories contains outliers. Regarding PHs, High profit category is centralised in lower PH values and has a skewed distribution.
+Relationships between Cost, Volume, Feed Types and Concentrations are difficult to draw but we can see more instance of higher concentrations in high profit category.
+  - We can also visualise a profitability line and regions. Unprofitable batches mostly occurs if the Cost is higher than 60,000€ while profitable batches are more numerous if volume is higher than 40𝑚3.
+
+From the smaller data frame:
+
+
+  - Hose Type 1 generated mostly low profit while Type 2 mostly Break Even instances with significant high profits
+  - No obvious relationship has been perceived between Hose Type, PH, Concentration, Cost or Volume
+  - Hose Type 1 generated more consistent low profit with Feed B while using Feed A managed some high profits with risks of Break Even
+  - Mostly Buffer 3 was used with Hose Type 1 while Buffer 1 was mostly used with Hose Type 2
+  - Using Buffer 1 with Type 2 seems to occur loss.
+  
+\newpage
+
+# Recommendations:
+- Aim to produce Concentrations between 121.5 and 125 mg/L for profitability.
+- Investigate what is causing concentration deviations to get more control on profitability.
+- Use Feed Type B for consistent profit. Investigate Feed Type A to measure profitability risks
+- Higher Concentrations seem more profitable
+- Aim to produce for less than 60,000€ or more than 40𝑚3
+- Investigate other Buffer than only 3 to explore profitability. Do not use Buffer 1 with Hose Type 2 to increase profitability.
+
+\newpage
+
+# Appendix - Exploring Visuals:
+```{r Appendix, echo=FALSE, message=FALSE, warning=FALSE}
+dfMerged %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Category on Volume for Feed Types Box plot\n
+          whole data (whole data)") +
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  geom_boxplot(aes(y=Volume, colour = FeedType))
+
+dfMerged %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Category on Volume for Hose Types Box plot\n
+          (whole data)") +
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  geom_boxplot(aes(y=Volume, colour = HoseTypeUsed))
+
+smalldf %>%
+  ggplot(aes(x=FinalConc, y=Volume)) +
+  ggtitle("Concentrations on Volume, per Feed Scatter plot\n
+          (small data)") +
+  geom_point(aes(colour = FeedType,size = 2))
+
+smalldf %>%
+  ggplot(aes(x=FinalConc, y=BatchCost)) +
+    ggtitle("Concentrations on Volume Scatter, per Hose plot\n
+            (small data)") +
+  geom_point(aes(colour = HoseTypeUsed,size = 2))
+
+smalldf %>%
+  ggplot(aes(x=FinalPH, y=BatchCost)) +
+  ggtitle("PHs on Volume Scatter plot, per Hose\n
+          (small data)") +
+  geom_point(aes(colour = HoseTypeUsed,size = 2))
+
+smalldf %>%
+  ggplot(aes(x=HoseTypeUsed)) +
+  ggtitle("PHs on Volume Scatter plot, per Feed\n
+          (small data)") +
+  geom_bar(aes(fill=FeedType), position = position_dodge())
+
+smalldf %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Category on Feed, per Hose Bar plot\n
+          (small data)") +
+  scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  geom_bar(aes(fill=FeedType), position = position_dodge())+
+  facet_grid(~HoseTypeUsed)
+
+smalldf %>%
+  ggplot(aes(x=HoseTypeUsed)) +
+  ggtitle("Hose on Buffer, per Category Bar plot\n
+          (small data)") +
+  geom_bar(aes(fill=BaseBuffer), position = position_dodge())+
+  facet_grid(~Category)
+
+smalldf %>%
+  ggplot(aes(x=Category)) +
+  ggtitle("Category on Age, per Hose Box plot\n
+          (small data)") +
+    scale_x_discrete(labels = c(
+    "High Profit"   = "HP", 
+    "Moderate Profit" = "MP", 
+    "Low Profit" = "LP",
+    "Break Even" = "BE",
+    "Tolerable Loss" = "TL",
+    "Unacceptable Loss" = "UL")) +
+  geom_boxplot(aes(y=AgeInWeeks, colour = HoseTypeUsed))
+
+smalldf %>%
+  ggplot(aes(x=AgeInWeeks, y=FinalPH)) +
+  ggtitle("Age on PH, per Hose Scatter plot\n
+          (small data)") +
+  geom_point(aes(colour = HoseTypeUsed,size = 2))
+```
+
